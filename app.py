@@ -1,47 +1,37 @@
 from flask import Flask, jsonify, render_template_string
+import yfinance as yf
 import pandas as pd
 import numpy as np
 import time
-import random
 
 app = Flask(__name__)
 
-# ---------- CACHE ----------
-cache = {
-    "time": 0,
-    "data": None
-}
+SYMBOL = "EURUSD=X"
 
+# ---------- CACHE ----------
+cache = {"time": 0, "data": None}
 CACHE_TIME = 60
 
 
-# ---------- FAKE MARKET DATA GENERATOR ----------
-def generate_fake_data():
-    base = 1.0850
-    rows = []
-
-    for i in range(200):
-        change = random.uniform(-0.0005, 0.0005)
-        base += change
-
-        open_p = base
-        high = base + random.uniform(0, 0.0003)
-        low = base - random.uniform(0, 0.0003)
-        close = base + random.uniform(-0.0002, 0.0002)
-
-        rows.append([open_p, high, low, close])
-
-    df = pd.DataFrame(rows, columns=["open", "high", "low", "close"])
-    return df
-
-
-# ---------- DATA FETCH (CACHED) ----------
+# ---------- REAL DATA ----------
 def get_data():
     try:
         if cache["data"] is not None and time.time() - cache["time"] < CACHE_TIME:
             return cache["data"]
 
-        df = generate_fake_data()
+        df = yf.download(SYMBOL, interval="5m", period="5d", progress=False)
+
+        if df is None or df.empty:
+            return "DATA_ERROR"
+
+        df = df.rename(columns={
+            "Open": "open",
+            "High": "high",
+            "Low": "low",
+            "Close": "close"
+        })
+
+        df = df.dropna().reset_index()
 
         cache["data"] = df
         cache["time"] = time.time()
@@ -91,8 +81,11 @@ def atr(df):
 def generate_signal():
     df = get_data()
 
+    if df == "DATA_ERROR":
+        return {"signal": "DATA ERROR ❌", "strength": "NO DATA"}
+
     if df == "BACKEND_CRASH":
-        return {"signal": "BACKEND CRASH ❌", "strength": "ERROR"}
+        return {"signal": "BACKEND CRASH ❌", "strength": "SERVER ISSUE"}
 
     if df is None or len(df) < 60:
         return {"signal": "AVOID ⚠️", "strength": "LOW"}
@@ -111,16 +104,16 @@ def generate_signal():
 
         score = 0
 
-        # ---------- TREND ----------
-        if ema9.iloc[-1] > ema21.iloc[-1] > ema50.iloc[-1] > ema100.iloc[-1]:
+        # ---------- TREND FILTER (STRONG WEIGHT) ----------
+        if ema9.iloc[-1] > ema21.iloc[-1] > ema50.iloc[-1]:
             score += 4
-        elif ema9.iloc[-1] < ema21.iloc[-1] < ema50.iloc[-1] < ema100.iloc[-1]:
+        elif ema9.iloc[-1] < ema21.iloc[-1] < ema50.iloc[-1]:
             score -= 4
 
-        # ---------- RSI ----------
-        if 55 <= rsi_val <= 65:
+        # ---------- RSI FILTER ----------
+        if 50 < rsi_val < 65:
             score += 2
-        elif 35 <= rsi_val <= 45:
+        elif 35 < rsi_val < 50:
             score -= 2
 
         # ---------- MACD ----------
@@ -135,81 +128,19 @@ def generate_signal():
         else:
             score -= 1
 
-        # ---------- VOLATILITY ----------
-        avg_price = close.mean()
+        # ---------- VOLATILITY FILTER ----------
+        if atr_val < close.mean() * 0.0004:
+            return {"signal": "AVOID ⚠️", "strength": "LOW VOLATILITY"}
 
-        if atr_val < avg_price * 0.0005:
-            return {"signal": "AVOID ⚠️", "strength": "LOW"}
-
-        # ---------- FINAL ----------
+        # ---------- FINAL DECISION ----------
         if score >= 6:
-            return {"signal": "CALL 📈", "strength": "HIGH"}
+            return {"signal": "CALL 📈", "strength": "HIGH CONFIDENCE"}
+
         elif score <= -6:
-            return {"signal": "PUT 📉", "strength": "HIGH"}
+            return {"signal": "PUT 📉", "strength": "HIGH CONFIDENCE"}
+
         else:
-            return {"signal": "AVOID ⚠️", "strength": "LOW"}
+            return {"signal": "AVOID ⚠️", "strength": "LOW CONFIDENCE"}
 
     except:
         return {"signal": "BACKEND CRASH ❌", "strength": "LOGIC ERROR"}
-
-
-# ---------- UI ----------
-HTML = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Signal Engine</title>
-    <style>
-        body { font-family: Arial; background:#0f172a; color:white; text-align:center; padding-top:60px; }
-        .box { background:#1e293b; padding:20px; width:320px; margin:auto; border-radius:12px; }
-        .title { font-size:22px; font-weight:bold; }
-        .signal { margin-top:20px; padding:20px; background:#111827; border-radius:10px; font-size:20px; }
-        button { margin-top:20px; padding:10px 20px; background:#22c55e; border:none; border-radius:8px; color:white; }
-    </style>
-</head>
-<body>
-
-<div class="box">
-    <div class="title">EUR/USD Signal Engine</div>
-    <div>Simulated Market (Stable Mode)</div>
-
-    <div class="signal" id="box">Loading...</div>
-
-    <button onclick="load()">Get Signal</button>
-</div>
-
-<script>
-async function load(){
-    try{
-        let res = await fetch("/signal");
-        let data = await res.json();
-
-        document.getElementById("box").innerText =
-            data.signal + " | " + data.strength;
-
-    }catch(e){
-        document.getElementById("box").innerText = "BACKEND CRASH ❌";
-    }
-}
-
-load();
-setInterval(load, 60000);
-</script>
-
-</body>
-</html>
-"""
-
-
-@app.route("/")
-def home():
-    return render_template_string(HTML)
-
-
-@app.route("/signal")
-def signal():
-    return jsonify(generate_signal())
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
