@@ -5,7 +5,7 @@ import numpy as np
 
 app = Flask(__name__)
 
-API_KEY = "8e9f4f263cd044cdb3a0a6972179737a"
+API_KEY = "ebb5cf7870004709a1c668a9ee35b886"
 SYMBOL = "EUR/USD"
 INTERVAL = "1min"
 
