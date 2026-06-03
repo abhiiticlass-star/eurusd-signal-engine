@@ -1,5 +1,3 @@
 flask
-yfinance
 pandas
 numpy
-requests
