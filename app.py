@@ -1,12 +1,10 @@
 from flask import Flask, jsonify, render_template_string
-import yfinance as yf
 import pandas as pd
 import numpy as np
 import time
+import random
 
 app = Flask(__name__)
-
-SYMBOL = "EURUSD=X"
 
 # ---------- CACHE ----------
 cache = {
@@ -17,26 +15,33 @@ cache = {
 CACHE_TIME = 60
 
 
-# ---------- DATA FETCH (YFINANCE) ----------
+# ---------- FAKE MARKET DATA GENERATOR ----------
+def generate_fake_data():
+    base = 1.0850
+    rows = []
+
+    for i in range(200):
+        change = random.uniform(-0.0005, 0.0005)
+        base += change
+
+        open_p = base
+        high = base + random.uniform(0, 0.0003)
+        low = base - random.uniform(0, 0.0003)
+        close = base + random.uniform(-0.0002, 0.0002)
+
+        rows.append([open_p, high, low, close])
+
+    df = pd.DataFrame(rows, columns=["open", "high", "low", "close"])
+    return df
+
+
+# ---------- DATA FETCH (CACHED) ----------
 def get_data():
     try:
         if cache["data"] is not None and time.time() - cache["time"] < CACHE_TIME:
             return cache["data"]
 
-        df = yf.download(SYMBOL, interval="1m", period="1d")
-
-        if df is None or df.empty:
-            return "DATA_ERROR"
-
-        df = df.rename(columns={
-            "Open": "open",
-            "High": "high",
-            "Low": "low",
-            "Close": "close"
-        })
-
-        df = df.dropna()
-        df = df.reset_index()
+        df = generate_fake_data()
 
         cache["data"] = df
         cache["time"] = time.time()
@@ -89,9 +94,6 @@ def generate_signal():
     if df == "BACKEND_CRASH":
         return {"signal": "BACKEND CRASH ❌", "strength": "ERROR"}
 
-    if df == "DATA_ERROR":
-        return {"signal": "DATA ERROR ❌", "strength": "NO DATA"}
-
     if df is None or len(df) < 60:
         return {"signal": "AVOID ⚠️", "strength": "LOW"}
 
@@ -135,6 +137,7 @@ def generate_signal():
 
         # ---------- VOLATILITY ----------
         avg_price = close.mean()
+
         if atr_val < avg_price * 0.0005:
             return {"signal": "AVOID ⚠️", "strength": "LOW"}
 
@@ -155,51 +158,20 @@ HTML = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>EUR/USD Signal Engine</title>
+    <title>Signal Engine</title>
     <style>
-        body {
-            font-family: Arial;
-            background: #0f172a;
-            color: white;
-            text-align: center;
-            padding-top: 60px;
-        }
-        .box {
-            background: #1e293b;
-            padding: 20px;
-            margin: auto;
-            width: 320px;
-            border-radius: 12px;
-        }
-        .title {
-            font-size: 22px;
-            font-weight: bold;
-        }
-        .signal {
-            margin-top: 20px;
-            padding: 20px;
-            background: #111827;
-            border-radius: 10px;
-            font-size: 20px;
-            min-height: 60px;
-        }
-        button {
-            margin-top: 20px;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 8px;
-            background: #22c55e;
-            color: white;
-            font-size: 16px;
-        }
+        body { font-family: Arial; background:#0f172a; color:white; text-align:center; padding-top:60px; }
+        .box { background:#1e293b; padding:20px; width:320px; margin:auto; border-radius:12px; }
+        .title { font-size:22px; font-weight:bold; }
+        .signal { margin-top:20px; padding:20px; background:#111827; border-radius:10px; font-size:20px; }
+        button { margin-top:20px; padding:10px 20px; background:#22c55e; border:none; border-radius:8px; color:white; }
     </style>
 </head>
-
 <body>
 
 <div class="box">
     <div class="title">EUR/USD Signal Engine</div>
-    <div>1 Minute Timeframe</div>
+    <div>Simulated Market (Stable Mode)</div>
 
     <div class="signal" id="box">Loading...</div>
 
