@@ -183,6 +183,7 @@ HTML = """
             background: #111827;
             border-radius: 10px;
             font-size: 20px;
+            min-height: 60px;
         }
 
         button {
@@ -211,22 +212,43 @@ HTML = """
     <div class="row">EUR/USD | 1 Minute Timeframe</div>
 
     <div class="signal" id="signalBox">
-        Click Get Signal
+        Loading signal...
     </div>
 
-    <button onclick="getSignal()">Get Signal</button>
+    <button onclick="getSignal()">Manual Refresh</button>
 
 </div>
 
 <script>
+
 async function getSignal() {
-    const res = await fetch("/signal");
-    const data = await res.json();
+    try {
+        const res = await fetch("/signal");
+        const data = await res.json();
 
-    let text = data.signal + " | " + data.strength + " Confidence";
+        let text = "";
 
-    document.getElementById("signalBox").innerText = text;
+        if (data.signal.includes("AVOID")) {
+            text = "AVOID ⚠️ | LOW Confidence";
+        } else {
+            text = data.signal + " | " + data.strength + " Confidence";
+        }
+
+        document.getElementById("signalBox").innerText = text;
+
+    } catch (e) {
+        document.getElementById("signalBox").innerText = "ERROR ⚠️";
+    }
 }
+
+
+// ---------- AUTO SYNC EVERY 1 MIN ----------
+getSignal(); // initial load
+
+setInterval(() => {
+    getSignal();
+}, 60000); // 60000ms = 1 minute
+
 </script>
 
 </body>
