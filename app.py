@@ -5,48 +5,55 @@ import numpy as np
 
 app = Flask(__name__)
 
-API_KEY = "8e9f4f263cd044cdb3a0a6972179737a"
+API_KEY = "YOUR_API_KEY"
 SYMBOL = "EUR/USD"
 INTERVAL = "1min"
 
 
-# ---------- DATA ----------
+# ---------- SAFE DATA FETCH ----------
 def get_data():
-    url = "https://api.twelvedata.com/time_series"
+    try:
+        url = "https://api.twelvedata.com/time_series"
 
-    params = {
-        "symbol": SYMBOL,
-        "interval": INTERVAL,
-        "outputsize": 100,
-        "apikey": API_KEY
-    }
+        params = {
+            "symbol": SYMBOL,
+            "interval": INTERVAL,
+            "outputsize": 120,
+            "apikey": API_KEY
+        }
 
-    r = requests.get(url, params=params).json()
+        r = requests.get(url, timeout=10).json()
 
-    if "values" not in r:
-        return None
+        # ❌ API issue detect
+        if "values" not in r:
+            return "API_CRASH"
 
-    df = pd.DataFrame(r["values"])
-    df = df.astype(float)
-    df = df.sort_index()
+        df = pd.DataFrame(r["values"])
 
-    return df
+        for col in ["open", "high", "low", "close"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        df = df.dropna()
+        df = df.iloc[::-1].reset_index(drop=True)
+
+        return df
+
+    except:
+        return "BACKEND_CRASH"
 
 
 # ---------- INDICATORS ----------
 def ema(series, period):
-    return series.ewm(span=period).mean()
+    return series.ewm(span=period, adjust=False).mean()
 
 
 def rsi(series, period=14):
     delta = series.diff()
-    gain = np.where(delta > 0, delta, 0)
-    loss = np.where(delta < 0, -delta, 0)
 
-    gain = pd.Series(gain).rolling(period).mean()
-    loss = pd.Series(loss).rolling(period).mean()
+    gain = (delta.where(delta > 0, 0)).rolling(period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
 
-    rs = gain / loss
+    rs = gain / loss.replace(0, np.nan)
     return 100 - (100 / (1 + rs))
 
 
@@ -55,9 +62,9 @@ def macd(series):
     ema26 = ema(series, 26)
 
     macd_line = ema12 - ema26
-    signal_line = ema(macd_line, 9)
+    signal = ema(macd_line, 9)
 
-    return macd_line, signal_line
+    return macd_line, signal
 
 
 def atr(df):
@@ -78,69 +85,74 @@ def atr(df):
 def generate_signal():
     df = get_data()
 
-    if df is None:
-        return {"signal": "DATA ERROR", "strength": "LOW"}
+    # ---------- ERROR HANDLING ----------
+    if df == "API_CRASH":
+        return {"signal": "API CRASH ❌", "strength": "CHECK API KEY / LIMIT"}
 
-    close = df["close"]
+    if df == "BACKEND_CRASH":
+        return {"signal": "BACKEND CRASH ❌", "strength": "SERVER ERROR"}
 
-    ema9 = ema(close, 9)
-    ema21 = ema(close, 21)
-    ema50 = ema(close, 50)
-    ema100 = ema(close, 100)
+    if df is None or len(df) < 60:
+        return {"signal": "AVOID ⚠️", "strength": "LOW"}
 
-    rsi_val = rsi(close).iloc[-1]
-    macd_line, macd_signal = macd(close)
-    atr_val = atr(df).iloc[-1]
+    try:
+        close = df["close"]
 
-    score = 0
+        ema9 = ema(close, 9)
+        ema21 = ema(close, 21)
+        ema50 = ema(close, 50)
+        ema100 = ema(close, 100)
 
-    # Trend
-    if ema9.iloc[-1] > ema21.iloc[-1] > ema50.iloc[-1] > ema100.iloc[-1]:
-        score += 3
-    elif ema9.iloc[-1] < ema21.iloc[-1] < ema50.iloc[-1] < ema100.iloc[-1]:
-        score -= 3
+        rsi_val = rsi(close).iloc[-1]
+        macd_line, macd_signal = macd(close)
+        atr_val = atr(df).iloc[-1]
 
-    # RSI
-    if 55 <= rsi_val <= 70:
-        score += 2
-    elif 30 <= rsi_val <= 45:
-        score -= 2
+        score = 0
 
-    # MACD
-    if macd_line.iloc[-1] > macd_signal.iloc[-1]:
-        score += 2
-    else:
-        score -= 2
+        # ---------- TREND ----------
+        if ema9.iloc[-1] > ema21.iloc[-1] > ema50.iloc[-1] > ema100.iloc[-1]:
+            score += 4
+        elif ema9.iloc[-1] < ema21.iloc[-1] < ema50.iloc[-1] < ema100.iloc[-1]:
+            score -= 4
 
-    # Momentum
-    if close.iloc[-1] > close.iloc[-2]:
-        score += 1
-    else:
-        score -= 1
+        # ---------- RSI ----------
+        if 55 <= rsi_val <= 65:
+            score += 2
+        elif 35 <= rsi_val <= 45:
+            score -= 2
 
-    # Volatility filter
-    if atr_val < close.mean() * 0.0004:
-        return {
-            "signal": "AVOID ⚠️",
-            "strength": "LOW"
-        }
+        # ---------- MACD ----------
+        if macd_line.iloc[-1] > macd_signal.iloc[-1]:
+            score += 3
+        else:
+            score -= 3
 
-    # Final decision
-    if score >= 5:
-        return {
-            "signal": "BUY 📈",
-            "strength": "HIGH"
-        }
-    elif score <= -5:
-        return {
-            "signal": "SELL 📉",
-            "strength": "HIGH"
-        }
-    else:
-        return {
-            "signal": "AVOID ⚠️",
-            "strength": "LOW"
-        }
+        # ---------- MOMENTUM ----------
+        if close.iloc[-1] > close.iloc[-3]:
+            score += 1
+        else:
+            score -= 1
+
+        # ---------- VOLATILITY ----------
+        avg_price = close.mean()
+
+        if atr_val < avg_price * 0.00035:
+            return {"signal": "AVOID ⚠️", "strength": "LOW"}
+
+        # ---------- FINAL DECISION ----------
+        if score >= 6:
+            # bullish → CALL
+            return {"signal": "CALL 📈", "strength": "HIGH"}
+
+        elif score <= -6:
+            # bearish → PUT
+            return {"signal": "PUT 📉", "strength": "HIGH"}
+
+        else:
+            return {"signal": "AVOID ⚠️", "strength": "LOW"}
+
+    except:
+        return {"signal": "BACKEND CRASH ❌", "strength": "LOGIC ERROR"}
 
 
 # ---------- UI ----------
@@ -172,14 +184,9 @@ HTML = """
             font-weight: bold;
         }
 
-        .row {
-            margin-top: 10px;
-            color: #cbd5e1;
-        }
-
         .signal {
             margin-top: 20px;
-            padding: 15px;
+            padding: 20px;
             background: #111827;
             border-radius: 10px;
             font-size: 20px;
@@ -194,11 +201,6 @@ HTML = """
             background: #22c55e;
             color: white;
             font-size: 16px;
-            cursor: pointer;
-        }
-
-        button:hover {
-            background: #16a34a;
         }
     </style>
 </head>
@@ -207,47 +209,33 @@ HTML = """
 
 <div class="box">
 
-    <div class="title">Abhi's Signal Engine</div>
+    <div class="title">EUR/USD Signal Engine</div>
 
-    <div class="row">EUR/USD | 1 Minute Timeframe</div>
+    <div>1 Minute Timeframe</div>
 
-    <div class="signal" id="signalBox">
-        Loading signal...
-    </div>
+    <div class="signal" id="box">Loading...</div>
 
-    <button onclick="getSignal()">Manual Refresh</button>
+    <button onclick="load()">Get Signal</button>
 
 </div>
 
 <script>
 
-async function getSignal() {
-    try {
-        const res = await fetch("/signal");
-        const data = await res.json();
+async function load(){
+    try{
+        let res = await fetch("/signal");
+        let data = await res.json();
 
-        let text = "";
+        document.getElementById("box").innerText =
+            data.signal + " | " + data.strength;
 
-        if (data.signal.includes("AVOID")) {
-            text = "AVOID ⚠️ | LOW Confidence";
-        } else {
-            text = data.signal + " | " + data.strength + " Confidence";
-        }
-
-        document.getElementById("signalBox").innerText = text;
-
-    } catch (e) {
-        document.getElementById("signalBox").innerText = "ERROR ⚠️";
+    }catch(e){
+        document.getElementById("box").innerText = "BACKEND CRASH ❌";
     }
 }
 
-
-// ---------- AUTO SYNC EVERY 1 MIN ----------
-getSignal(); // initial load
-
-setInterval(() => {
-    getSignal();
-}, 60000); // 60000ms = 1 minute
+load();
+setInterval(load, 60000);
 
 </script>
 
