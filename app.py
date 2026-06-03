@@ -2,17 +2,30 @@ from flask import Flask, jsonify, render_template_string
 import requests
 import pandas as pd
 import numpy as np
+import time
 
 app = Flask(__name__)
 
-API_KEY = "ebb5cf7870004709a1c668a9ee35b886"
+API_KEY = "YOUR_API_KEY"
 SYMBOL = "EUR/USD"
 INTERVAL = "1min"
+
+# ---------- CACHE (IMPORTANT FIX) ----------
+cache = {
+    "time": 0,
+    "data": None
+}
+
+CACHE_TIME = 55  # seconds
 
 
 # ---------- SAFE DATA FETCH ----------
 def get_data():
     try:
+        # 🔥 CACHE LOGIC (prevents API crash)
+        if time.time() - cache["time"] < CACHE_TIME:
+            return cache["data"]
+
         url = "https://api.twelvedata.com/time_series"
 
         params = {
@@ -24,7 +37,10 @@ def get_data():
 
         r = requests.get(url, timeout=10).json()
 
-        # ❌ API issue detect
+        # ---------- API ERROR DETECTION ----------
+        if r.get("status") == "error":
+            return "API_CRASH"
+
         if "values" not in r:
             return "API_CRASH"
 
@@ -35,6 +51,9 @@ def get_data():
 
         df = df.dropna()
         df = df.iloc[::-1].reset_index(drop=True)
+
+        cache["data"] = df
+        cache["time"] = time.time()
 
         return df
 
@@ -49,10 +68,8 @@ def ema(series, period):
 
 def rsi(series, period=14):
     delta = series.diff()
-
     gain = (delta.where(delta > 0, 0)).rolling(period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
-
     rs = gain / loss.replace(0, np.nan)
     return 100 - (100 / (1 + rs))
 
@@ -60,10 +77,8 @@ def rsi(series, period=14):
 def macd(series):
     ema12 = ema(series, 12)
     ema26 = ema(series, 26)
-
     macd_line = ema12 - ema26
     signal = ema(macd_line, 9)
-
     return macd_line, signal
 
 
@@ -85,9 +100,9 @@ def atr(df):
 def generate_signal():
     df = get_data()
 
-    # ---------- ERROR HANDLING ----------
+    # ---------- ERROR STATES ----------
     if df == "API_CRASH":
-        return {"signal": "API CRASH ❌", "strength": "CHECK API KEY / LIMIT"}
+        return {"signal": "API CRASH ❌", "strength": "CHECK API / LIMIT"}
 
     if df == "BACKEND_CRASH":
         return {"signal": "BACKEND CRASH ❌", "strength": "SERVER ERROR"}
@@ -141,11 +156,9 @@ def generate_signal():
 
         # ---------- FINAL DECISION ----------
         if score >= 6:
-            # bullish → CALL
             return {"signal": "CALL 📈", "strength": "HIGH"}
 
         elif score <= -6:
-            # bearish → PUT
             return {"signal": "PUT 📉", "strength": "HIGH"}
 
         else:
