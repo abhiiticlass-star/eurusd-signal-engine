@@ -1,16 +1,12 @@
 from flask import Flask, jsonify, render_template_string
-import requests
+import yfinance as yf
 import pandas as pd
 import numpy as np
 import time
 
 app = Flask(__name__)
 
-# 🔥 YOUR API KEY (added)
-API_KEY = "ebb5cf7870004709a1c668a9ee35b886"
-
-SYMBOL = "EUR/USD"
-INTERVAL = "1min"
+SYMBOL = "EURUSD=X"
 
 # ---------- CACHE ----------
 cache = {
@@ -18,45 +14,29 @@ cache = {
     "data": None
 }
 
-CACHE_TIME = 55
+CACHE_TIME = 60
 
 
-# ---------- SAFE DATA FETCH ----------
+# ---------- DATA FETCH (YFINANCE) ----------
 def get_data():
     try:
-        # cache
         if cache["data"] is not None and time.time() - cache["time"] < CACHE_TIME:
             return cache["data"]
 
-        url = "https://api.twelvedata.com/time_series"
+        df = yf.download(SYMBOL, interval="1m", period="1d")
 
-        params = {
-            "symbol": SYMBOL,
-            "interval": INTERVAL,
-            "outputsize": 120,
-            "apikey": API_KEY
-        }
+        if df is None or df.empty:
+            return "DATA_ERROR"
 
-        r = requests.get(url, timeout=10).json()
-
-        # ---------- API ERROR CHECK ----------
-        if r.get("status") == "error":
-            return "API_CRASH"
-
-        if "values" not in r:
-            return "API_CRASH"
-
-        df = pd.DataFrame(r["values"])
-
-        for col in ["open", "high", "low", "close"]:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df = df.rename(columns={
+            "Open": "open",
+            "High": "high",
+            "Low": "low",
+            "Close": "close"
+        })
 
         df = df.dropna()
-
-        if len(df) < 60:
-            return None
-
-        df = df.iloc[::-1].reset_index(drop=True)
+        df = df.reset_index()
 
         cache["data"] = df
         cache["time"] = time.time()
@@ -106,13 +86,13 @@ def atr(df):
 def generate_signal():
     df = get_data()
 
-    if df == "API_CRASH":
-        return {"signal": "API CRASH ❌", "strength": "CHECK KEY / LIMIT"}
-
     if df == "BACKEND_CRASH":
-        return {"signal": "BACKEND CRASH ❌", "strength": "SERVER ERROR"}
+        return {"signal": "BACKEND CRASH ❌", "strength": "ERROR"}
 
-    if df is None:
+    if df == "DATA_ERROR":
+        return {"signal": "DATA ERROR ❌", "strength": "NO DATA"}
+
+    if df is None or len(df) < 60:
         return {"signal": "AVOID ⚠️", "strength": "LOW"}
 
     try:
@@ -155,17 +135,14 @@ def generate_signal():
 
         # ---------- VOLATILITY ----------
         avg_price = close.mean()
-
-        if atr_val < avg_price * 0.00035:
+        if atr_val < avg_price * 0.0005:
             return {"signal": "AVOID ⚠️", "strength": "LOW"}
 
         # ---------- FINAL ----------
         if score >= 6:
             return {"signal": "CALL 📈", "strength": "HIGH"}
-
         elif score <= -6:
             return {"signal": "PUT 📉", "strength": "HIGH"}
-
         else:
             return {"signal": "AVOID ⚠️", "strength": "LOW"}
 
