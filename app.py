@@ -6,24 +6,26 @@ import time
 
 app = Flask(__name__)
 
-API_KEY = "YOUR_API_KEY"
+# 🔥 YOUR API KEY (added)
+API_KEY = "ebb5cf7870004709a1c668a9ee35b886"
+
 SYMBOL = "EUR/USD"
 INTERVAL = "1min"
 
-# ---------- CACHE (IMPORTANT FIX) ----------
+# ---------- CACHE ----------
 cache = {
     "time": 0,
     "data": None
 }
 
-CACHE_TIME = 55  # seconds
+CACHE_TIME = 55
 
 
 # ---------- SAFE DATA FETCH ----------
 def get_data():
     try:
-        # 🔥 CACHE LOGIC (prevents API crash)
-        if time.time() - cache["time"] < CACHE_TIME:
+        # cache
+        if cache["data"] is not None and time.time() - cache["time"] < CACHE_TIME:
             return cache["data"]
 
         url = "https://api.twelvedata.com/time_series"
@@ -37,7 +39,7 @@ def get_data():
 
         r = requests.get(url, timeout=10).json()
 
-        # ---------- API ERROR DETECTION ----------
+        # ---------- API ERROR CHECK ----------
         if r.get("status") == "error":
             return "API_CRASH"
 
@@ -50,6 +52,10 @@ def get_data():
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
         df = df.dropna()
+
+        if len(df) < 60:
+            return None
+
         df = df.iloc[::-1].reset_index(drop=True)
 
         cache["data"] = df
@@ -100,14 +106,13 @@ def atr(df):
 def generate_signal():
     df = get_data()
 
-    # ---------- ERROR STATES ----------
     if df == "API_CRASH":
-        return {"signal": "API CRASH ❌", "strength": "CHECK API / LIMIT"}
+        return {"signal": "API CRASH ❌", "strength": "CHECK KEY / LIMIT"}
 
     if df == "BACKEND_CRASH":
         return {"signal": "BACKEND CRASH ❌", "strength": "SERVER ERROR"}
 
-    if df is None or len(df) < 60:
+    if df is None:
         return {"signal": "AVOID ⚠️", "strength": "LOW"}
 
     try:
@@ -154,7 +159,7 @@ def generate_signal():
         if atr_val < avg_price * 0.00035:
             return {"signal": "AVOID ⚠️", "strength": "LOW"}
 
-        # ---------- FINAL DECISION ----------
+        # ---------- FINAL ----------
         if score >= 6:
             return {"signal": "CALL 📈", "strength": "HIGH"}
 
@@ -174,7 +179,6 @@ HTML = """
 <html>
 <head>
     <title>EUR/USD Signal Engine</title>
-
     <style>
         body {
             font-family: Arial;
@@ -183,7 +187,6 @@ HTML = """
             text-align: center;
             padding-top: 60px;
         }
-
         .box {
             background: #1e293b;
             padding: 20px;
@@ -191,12 +194,10 @@ HTML = """
             width: 320px;
             border-radius: 12px;
         }
-
         .title {
             font-size: 22px;
             font-weight: bold;
         }
-
         .signal {
             margin-top: 20px;
             padding: 20px;
@@ -205,7 +206,6 @@ HTML = """
             font-size: 20px;
             min-height: 60px;
         }
-
         button {
             margin-top: 20px;
             padding: 10px 20px;
@@ -221,19 +221,15 @@ HTML = """
 <body>
 
 <div class="box">
-
     <div class="title">EUR/USD Signal Engine</div>
-
     <div>1 Minute Timeframe</div>
 
     <div class="signal" id="box">Loading...</div>
 
     <button onclick="load()">Get Signal</button>
-
 </div>
 
 <script>
-
 async function load(){
     try{
         let res = await fetch("/signal");
@@ -249,7 +245,6 @@ async function load(){
 
 load();
 setInterval(load, 60000);
-
 </script>
 
 </body>
