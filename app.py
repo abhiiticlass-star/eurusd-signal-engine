@@ -20,27 +20,38 @@ def get_data():
         if cache["data"] is not None and time.time() - cache["time"] < CACHE_TIME:
             return cache["data"]
 
-        url = "https://api.binance.com/api/v3/klines"
+        url = "https://api.bybit.com/v5/market/kline"
 
         r = requests.get(
             url,
             params={
+                "category": "linear",
                 "symbol": SYMBOL,
-                "interval": INTERVAL,
+                "interval": "1",
                 "limit": 200
             },
             timeout=10
         ).json()
 
-        if isinstance(r, dict):
-            return r
+        if r.get("retCode") != 0:
+            return None
 
-        df = pd.DataFrame(r, columns=[
-            "time", "open", "high", "low", "close", "volume",
-            "c1", "c2", "c3", "c4", "c5", "c6"
+        data = r["result"]["list"]
+
+        df = pd.DataFrame(data, columns=[
+            "time",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "turnover"
         ])
 
         df = df[["open", "high", "low", "close"]].astype(float)
+
+        # Bybit newest candle pehle deta hai
+        df = df.iloc[::-1].reset_index(drop=True)
 
         cache["data"] = df
         cache["time"] = time.time()
@@ -48,12 +59,20 @@ def get_data():
         return df
 
     except Exception as e:
-        return {"error": str(e)}
-
+        print("ERROR:", e)
+        return None
 
 @app.route("/debug")
 def debug():
-    return jsonify(get_data())
+    df = get_data()
+
+    if df is None:
+        return jsonify({"error": "No Data"})
+
+    return jsonify({
+        "rows": len(df),
+        "columns": list(df.columns)
+    })
 
 
 # ---------- INDICATORS ----------
