@@ -99,10 +99,8 @@ def generate_signal():
     if close.iloc[-1] > close.iloc[-3]:
         score += 1
 
-    # ---------- CONFIDENCE CALC ----------
     confidence = min(100, max(10, int((abs(score) / 6) * 100)))
 
-    # ---------- FINAL ----------
     if score >= 4:
         return {"signal": "CALL 📈", "strength": confidence, "type": "HIGH"}
     elif score <= -4:
@@ -174,16 +172,30 @@ button{
 
 <script>
 
-let seconds = 60;
+function getNextCandleTime(){
+    let now = new Date();
+    now.setSeconds(0);
+    now.setMilliseconds(0);
+    now.setMinutes(now.getMinutes() + 1);
+    return now.getTime();
+}
 
-function countdown(){
-    seconds--;
-    if(seconds <= 0){
+let nextCandle = getNextCandleTime();
+
+function updateTimer(){
+    let now = new Date().getTime();
+    let diff = nextCandle - now;
+
+    if(diff <= 0){
         load();
-        seconds = 60;
+        nextCandle = getNextCandleTime();
+        diff = 60000;
     }
+
+    let sec = Math.floor(diff / 1000);
+
     document.getElementById("timer").innerText =
-        "Next update in: " + seconds + " sec";
+        "Next candle in: " + sec + " sec";
 }
 
 async function load(){
@@ -195,11 +207,10 @@ async function load(){
         : "AVOID ⚠️ | " + d.strength + "% CONFIDENCE";
 
     document.getElementById("box").innerText = label;
-    seconds = 60;
 }
 
 load();
-setInterval(countdown, 1000);
+setInterval(updateTimer, 1000);
 
 </script>
 
