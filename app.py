@@ -76,7 +76,6 @@ e50 = ema(close, 50)
 
     r = rsi(close).iloc[-1]
     m, s = macd(close)
-
     score = 0
 
     # TREND
