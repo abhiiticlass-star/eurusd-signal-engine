@@ -1,5 +1,5 @@
 flask
-yfinance
+requests
 pandas
 numpy
 gunicorn
