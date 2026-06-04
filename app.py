@@ -135,7 +135,7 @@ def generate_signal():
 
         confidence = min(95, max(20, int((abs(score) / 9) * 100)))
 
-    if score >= 2:
+    if score >= 3:
         return {
             "signal": "CALL 📈",
             "strength": confidence,
@@ -144,7 +144,7 @@ def generate_signal():
             "rsi": round(r, 2)
         }
 
-    elif score <= -2:
+    elif score <= -3:
         return {
             "signal": "PUT 📉",
             "strength": confidence,
