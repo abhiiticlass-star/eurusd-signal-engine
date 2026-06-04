@@ -1,39 +1,3 @@
-from flask import Flask, jsonify, render_template_string
-import yfinance as yf
-import pandas as pd
-import numpy as np
-import time
-import os
-
-app = Flask(__name__)
-
-SYMBOL = "EURUSD=X"
-
-cache = {"time": 0, "data": None}
-CACHE_TIME = 60
-
-
-# ---------- DATA ----------
-def get_data():
-    try:
-        if cache["data"] is not None and time.time() - cache["time"] < CACHE_TIME:
-            return cache["data"]
-
-        df = yf.download(SYMBOL, interval="5m", period="5d", progress=False)
-
-        if df is None or df.empty:
-            return "DATA_ERROR"
-
-        df = df.rename(columns={
-            "Open": "open",
-            "High": "high",
-            "Low": "low",
-            "Close": "close"
-        })
-
-        df = df.dropna().reset_index()
-
-        cache["data"] = df
         cache["time"] = time.time()
 
         return df
