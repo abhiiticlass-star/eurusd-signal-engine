@@ -7,51 +7,33 @@ import os
 
 app = Flask(__name__)
 
-API_KEY = "DYASXHAJUXF7XLGN"
-INTERVAL = "1min"
+SYMBOL = "BTCUSDT"
+INTERVAL = "1m"
 
 cache = {"time": 0, "data": None}
-CACHE_TIME = 120  # 2 min cache (IMPORTANT FIX)
+CACHE_TIME = 30
 
 
-# ---------- DATA FETCH ----------
+# ---------- BINANCE DATA ----------
 def get_data():
     try:
         if cache["data"] is not None and time.time() - cache["time"] < CACHE_TIME:
             return cache["data"]
 
-        url = "https://www.alphavantage.co/query"
+        url = "https://api.binance.com/api/v3/klines"
 
-        params = {
-            "function": "FX_INTRADAY",
-            "from_symbol": "EUR",
-            "to_symbol": "USD",
+        r = requests.get(url, params={
+            "symbol": SYMBOL,
             "interval": INTERVAL,
-            "apikey": API_KEY,
-            "outputsize": "compact"
-        }
+            "limit": 200
+        }, timeout=10).json()
 
-        r = requests.get(url, params=params, timeout=10).json()
+        df = pd.DataFrame(r, columns=[
+            "time","open","high","low","close","volume",
+            "c1","c2","c3","c4","c5","c6"
+        ])
 
-        # ❌ HARD FIX FOR LIMIT ERROR
-        if "Note" in r:
-            return "API_LIMIT"
-
-        if "Time Series FX (1min)" not in r:
-            return "DATA_ERROR"
-
-        data = r["Time Series FX (1min)"]
-
-        df = pd.DataFrame.from_dict(data, orient="index")
-        df = df.rename(columns={
-            "1. open": "open",
-            "2. high": "high",
-            "3. low": "low",
-            "4. close": "close"
-        })
-
-        df = df.astype(float)
-        df = df.sort_index().reset_index(drop=True)
+        df = df[["open","high","low","close"]].astype(float)
 
         cache["data"] = df
         cache["time"] = time.time()
@@ -59,11 +41,12 @@ def get_data():
         return df
 
     except:
-        return "BACKEND_CRASH"
+        return None
 
 
 # ---------- INDICATORS ----------
-def ema(s, p): return s.ewm(span=p, adjust=False).mean()
+def ema(s, p):
+    return s.ewm(span=p, adjust=False).mean()
 
 def rsi(s, p=14):
     d = s.diff()
@@ -77,80 +60,53 @@ def macd(s):
     sig = ema(m, 9)
     return m, sig
 
-def atr(df):
-    h, l, c = df["high"], df["low"], df["close"]
-    tr = pd.concat([
-        h-l,
-        abs(h-c.shift()),
-        abs(l-c.shift())
-    ], axis=1).max(axis=1)
-    return tr.rolling(14).mean()
-
 
 # ---------- SIGNAL ENGINE ----------
 def generate_signal():
     df = get_data()
 
-    if df == "API_LIMIT":
-        return {"signal": "API LIMIT ⚠️", "strength": "WAIT 1-2 MIN"}
+    if df is None or len(df) < 60:
+        return {"signal": "NO DATA ❌", "strength": "LOW"}
 
-    if df == "DATA_ERROR":
-        return {"signal": "DATA ERROR ❌", "strength": "NO DATA"}
+    close = df["close"]
 
-    if df == "BACKEND_CRASH":
-        return {"signal": "BACKEND ERROR ❌", "strength": "SERVER"}
+    e9 = ema(close, 9)
+    e21 = ema(close, 21)
 
-    try:
-        close = df["close"]
+    r = rsi(close).iloc[-1]
+    m, s = macd(close)
 
-        e9 = ema(close, 9)
-        e21 = ema(close, 21)
-        e50 = ema(close, 50)
+    score = 0
 
-        r = rsi(close).iloc[-1]
-        m, s = macd(close)
-        a = atr(df).iloc[-1]
+    # TREND
+    if e9.iloc[-1] > e21.iloc[-1]:
+        score += 2
+    else:
+        score -= 2
 
-        if pd.isna(a):
-            return {"signal": "AVOID ⚠️", "strength": "NO VOL DATA"}
+    # RSI
+    if 55 < r < 70:
+        score += 2
+    elif 30 < r < 45:
+        score -= 2
 
-        score = 0
+    # MACD
+    if m.iloc[-1] > s.iloc[-1]:
+        score += 2
+    else:
+        score -= 2
 
-        # TREND
-        if e9.iloc[-1] > e21.iloc[-1] > e50.iloc[-1]:
-            score += 3
-        elif e9.iloc[-1] < e21.iloc[-1] < e50.iloc[-1]:
-            score -= 3
+    # MOMENTUM
+    if close.iloc[-1] > close.iloc[-3]:
+        score += 1
 
-        # RSI
-        if 50 < r < 65:
-            score += 2
-        elif 35 < r < 50:
-            score -= 2
-
-        # MACD
-        if m.iloc[-1] > s.iloc[-1]:
-            score += 2
-        else:
-            score -= 2
-
-        # MOMENTUM
-        if close.iloc[-1] > close.iloc[-3]:
-            score += 1
-
-        # VOL FILTER
-        if a < close.mean() * 0.0004:
-            return {"signal": "AVOID ⚠️", "strength": "LOW VOL"}
-
-        if score >= 5:
-            return {"signal": "CALL 📈", "strength": "GOOD SETUP"}
-        elif score <= -5:
-            return {"signal": "PUT 📉", "strength": "GOOD SETUP"}
-        else:
-            return {"signal": "AVOID ⚠️", "strength": "NO TRADE"}
-
-    except:
-        return {"signal": "ERROR ❌", "strength": "LOGIC"}
+    # FINAL DECISION
+    if score >= 4:
+        return {"signal": "CALL 📈", "strength": "HIGH"}
+    elif score <= -4:
+        return {"signal": "PUT 📉", "strength": "HIGH"}
+    else:
+        return {"signal": "AVOID ⚠️", "strength": "LOW"}
 
 
 # ---------- UI ----------
@@ -158,30 +114,59 @@ HTML = """
 <!DOCTYPE html>
 <html>
 <head>
-<title>Pro Signal Engine</title>
+<title>BTCUSDT Signal Engine</title>
 <style>
-body{background:#0f172a;color:white;text-align:center;font-family:Arial;padding-top:60px}
-.box{background:#1e293b;width:350px;margin:auto;padding:20px;border-radius:12px}
-.signal{margin-top:20px;background:#111827;padding:20px;border-radius:10px;font-size:20px}
-button{margin-top:20px;padding:10px 20px;background:#22c55e;border:none;border-radius:8px;color:white}
+body{
+    background:#0f172a;
+    color:white;
+    text-align:center;
+    font-family:Arial;
+    padding-top:60px;
+}
+.box{
+    background:#1e293b;
+    width:340px;
+    margin:auto;
+    padding:20px;
+    border-radius:12px;
+}
+.signal{
+    margin-top:20px;
+    background:#111827;
+    padding:20px;
+    border-radius:10px;
+    font-size:20px;
+}
+button{
+    margin-top:20px;
+    padding:10px 20px;
+    background:#22c55e;
+    border:none;
+    border-radius:8px;
+    color:white;
+}
 </style>
 </head>
 <body>
 
 <div class="box">
-<h2>EUR/USD PRO ENGINE</h2>
+<h2>BTCUSDT LIVE SIGNAL</h2>
+
 <div class="signal" id="box">Loading...</div>
+
 <button onclick="load()">Refresh</button>
 </div>
 
 <script>
 async function load(){
-let r=await fetch('/signal')
-let d=await r.json()
-document.getElementById("box").innerText=d.signal+" | "+d.strength
+    let r = await fetch('/signal');
+    let d = await r.json();
+    document.getElementById("box").innerText =
+        d.signal + " | " + d.strength;
 }
-load()
-setInterval(load,60000)
+
+load();
+setInterval(load, 30000);
 </script>
 
 </body>
@@ -193,9 +178,11 @@ setInterval(load,60000)
 def home():
     return render_template_string(HTML)
 
+
 @app.route("/signal")
 def signal():
     return jsonify(generate_signal())
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
