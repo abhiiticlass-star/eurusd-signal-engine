@@ -105,8 +105,8 @@ def generate_signal():
 
     confidence = min(95, max(20, int((abs(score) / 9) * 100)))
 
-    if score >= 3:
-    return {
+if score >= 3:
+     return {
         "signal": "CALL 📈",
         "strength": confidence,
         "type": "HIGH",
