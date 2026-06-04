@@ -28,6 +28,9 @@ def get_data():
             "limit": 200
         }, timeout=10).json()
 
+        if isinstance(r, dict):
+    return r
+
         df = pd.DataFrame(r, columns=[
             "time","open","high","low","close","volume",
             "c1","c2","c3","c4","c5","c6"
@@ -42,14 +45,11 @@ def get_data():
 
     except:
         return None
-        
-        
+
+   
 @app.route("/debug")
 def debug():
-    df = get_data()
-
-    if df is None:
-        return jsonify({"error": "df is None"})
+    return jsonify(get_data())
 
     return jsonify({
         "rows": len(df),
