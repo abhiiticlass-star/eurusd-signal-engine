@@ -3,17 +3,17 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import time
+import os
 
 app = Flask(__name__)
 
 SYMBOL = "EURUSD=X"
 
-# ---------- CACHE ----------
 cache = {"time": 0, "data": None}
 CACHE_TIME = 60
 
 
-# ---------- REAL DATA ----------
+# ---------- DATA ----------
 def get_data():
     try:
         if cache["data"] is not None and time.time() - cache["time"] < CACHE_TIME:
@@ -77,7 +77,7 @@ def atr(df):
     return tr.rolling(14).mean()
 
 
-# ---------- SIGNAL ENGINE ----------
+# ---------- SIGNAL ----------
 def generate_signal():
     df = get_data()
 
@@ -96,51 +96,67 @@ def generate_signal():
         ema9 = ema(close, 9)
         ema21 = ema(close, 21)
         ema50 = ema(close, 50)
-        ema100 = ema(close, 100)
 
         rsi_val = rsi(close).iloc[-1]
         macd_line, macd_signal = macd(close)
         atr_val = atr(df).iloc[-1]
 
+        if pd.isna(atr_val):
+            return {"signal": "AVOID ⚠️", "strength": "NO VOL DATA"}
+
         score = 0
 
-        # ---------- TREND FILTER (STRONG WEIGHT) ----------
+        # TREND
         if ema9.iloc[-1] > ema21.iloc[-1] > ema50.iloc[-1]:
             score += 4
         elif ema9.iloc[-1] < ema21.iloc[-1] < ema50.iloc[-1]:
             score -= 4
 
-        # ---------- RSI FILTER ----------
+        # RSI
         if 50 < rsi_val < 65:
             score += 2
         elif 35 < rsi_val < 50:
             score -= 2
 
-        # ---------- MACD ----------
+        # MACD
         if macd_line.iloc[-1] > macd_signal.iloc[-1]:
             score += 3
         else:
             score -= 3
 
-        # ---------- MOMENTUM ----------
+        # MOMENTUM
         if close.iloc[-1] > close.iloc[-3]:
             score += 1
         else:
             score -= 1
 
-        # ---------- VOLATILITY FILTER ----------
+        # VOLATILITY FILTER
         if atr_val < close.mean() * 0.0004:
             return {"signal": "AVOID ⚠️", "strength": "LOW VOLATILITY"}
 
-        # ---------- FINAL DECISION ----------
+        # FINAL
         if score >= 6:
             return {"signal": "CALL 📈", "strength": "HIGH CONFIDENCE"}
-
         elif score <= -6:
             return {"signal": "PUT 📉", "strength": "HIGH CONFIDENCE"}
-
         else:
             return {"signal": "AVOID ⚠️", "strength": "LOW CONFIDENCE"}
 
     except:
         return {"signal": "BACKEND CRASH ❌", "strength": "LOGIC ERROR"}
+
+
+@app.route("/")
+def home():
+    return "<h2>Signal Engine Running ✅</h2>"
+
+
+@app.route("/signal")
+def signal():
+    return jsonify(generate_signal())
+
+
+# ---------- FIX FOR RENDER ----------
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
