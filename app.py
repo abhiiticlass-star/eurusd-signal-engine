@@ -73,6 +73,7 @@ def generate_signal():
     e9 = ema(close, 9)
 e21 = ema(close, 21)
 e50 = ema(close, 50)
+
     r = rsi(close).iloc[-1]
     m, s = macd(close)
 
