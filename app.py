@@ -250,7 +250,9 @@ function updateTimer(){
         "Next candle in: " + sec + " sec";
 }
 
-async function load(){
+let signalTimeout;
+
+async function load() {
     let r = await fetch('/signal');
     let d = await r.json();
 
@@ -259,6 +261,13 @@ async function load(){
         : "AVOID ⚠️ | " + d.strength + "% CONFIDENCE";
 
     document.getElementById("box").innerText = label;
+
+    clearTimeout(signalTimeout);
+
+    signalTimeout = setTimeout(() => {
+        document.getElementById("box").innerText =
+            "AVOID ⚠️ | WAITING FOR NEXT CANDLE";
+    }, 60000);
 }
 
 load();
