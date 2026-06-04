@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template_string
 import requests
 import pandas as pd
 import numpy as np
@@ -8,14 +8,13 @@ import os
 app = Flask(__name__)
 
 API_KEY = "DYASXHAJUXF7XLGN"
-SYMBOL = "EURUSD"
 INTERVAL = "1min"
 
 cache = {"time": 0, "data": None}
 CACHE_TIME = 60
 
 
-# ---------- DATA FETCH (ALPHA VANTAGE) ----------
+# ---------- DATA FETCH ----------
 def get_data():
     try:
         if cache["data"] is not None and time.time() - cache["time"] < CACHE_TIME:
@@ -50,8 +49,7 @@ def get_data():
         for col in ["open", "high", "low", "close"]:
             df[col] = pd.to_numeric(df[col])
 
-        df = df.sort_index()
-        df = df.reset_index(drop=True)
+        df = df.sort_index().reset_index(drop=True)
 
         cache["data"] = df
         cache["time"] = time.time()
@@ -102,10 +100,10 @@ def generate_signal():
     df = get_data()
 
     if df == "DATA_ERROR":
-        return {"signal": "API LIMIT / NO DATA ❌", "strength": "CHECK ALPHA VANTAGE LIMIT"}
+        return {"signal": "API ERROR ❌", "strength": "LIMIT / NO DATA"}
 
     if df == "BACKEND_CRASH":
-        return {"signal": "BACKEND CRASH ❌", "strength": "SERVER ERROR"}
+        return {"signal": "BACKEND CRASH ❌", "strength": "SERVER ISSUE"}
 
     try:
         close = df["close"]
@@ -117,9 +115,6 @@ def generate_signal():
         rsi_val = rsi(close).iloc[-1]
         macd_line, macd_signal = macd(close)
         atr_val = atr(df).iloc[-1]
-
-        if pd.isna(atr_val) or pd.isna(rsi_val):
-            return {"signal": "AVOID ⚠️", "strength": "INSUFFICIENT DATA"}
 
         score = 0
 
@@ -147,26 +142,112 @@ def generate_signal():
         else:
             score -= 1
 
-        # VOLATILITY FILTER
+        # VOLATILITY
         if atr_val < close.mean() * 0.0004:
             return {"signal": "AVOID ⚠️", "strength": "LOW VOLATILITY"}
 
-        # FINAL DECISION
         if score >= 6:
-            return {"signal": "CALL 📈", "strength": "HIGH CONFIDENCE"}
+            return {"signal": "CALL 📈", "strength": "HIGH"}
         elif score <= -6:
-            return {"signal": "PUT 📉", "strength": "HIGH CONFIDENCE"}
+            return {"signal": "PUT 📉", "strength": "HIGH"}
         else:
-            return {"signal": "AVOID ⚠️", "strength": "LOW CONFIDENCE"}
+            return {"signal": "AVOID ⚠️", "strength": "LOW"}
 
     except:
         return {"signal": "BACKEND CRASH ❌", "strength": "LOGIC ERROR"}
 
 
-# ---------- ROUTES ----------
+# ---------- UI ----------
+HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>EUR/USD Signal Engine</title>
+
+    <style>
+        body {
+            font-family: Arial;
+            background: #0f172a;
+            color: white;
+            text-align: center;
+            padding-top: 60px;
+        }
+
+        .box {
+            background: #1e293b;
+            padding: 20px;
+            margin: auto;
+            width: 340px;
+            border-radius: 12px;
+        }
+
+        .title {
+            font-size: 22px;
+            font-weight: bold;
+        }
+
+        .signal {
+            margin-top: 20px;
+            padding: 20px;
+            background: #111827;
+            border-radius: 10px;
+            font-size: 20px;
+            min-height: 60px;
+        }
+
+        button {
+            margin-top: 20px;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            background: #22c55e;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="box">
+    <div class="title">EUR/USD Signal Engine</div>
+    <div>1 Minute Timeframe</div>
+
+    <div class="signal" id="box">Loading...</div>
+
+    <button onclick="load()">Get Signal</button>
+</div>
+
+<script>
+
+async function load(){
+    try{
+        let res = await fetch("/signal");
+        let data = await res.json();
+
+        document.getElementById("box").innerText =
+            data.signal + " | " + data.strength;
+
+    }catch(e){
+        document.getElementById("box").innerText = "BACKEND CRASH ❌";
+    }
+}
+
+// auto refresh every 1 min
+load();
+setInterval(load, 60000);
+
+</script>
+
+</body>
+</html>
+"""
+
+
 @app.route("/")
 def home():
-    return "<h2>EUR/USD Signal Engine (Alpha Vantage) ✅</h2>"
+    return render_template_string(HTML)
 
 
 @app.route("/signal")
