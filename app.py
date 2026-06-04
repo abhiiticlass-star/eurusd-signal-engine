@@ -11,7 +11,7 @@ SYMBOL = "BTCUSDT"
 INTERVAL = "1m"
 
 cache = {"time": 0, "data": None}
-CACHE_TIME = 30
+CACHE_TIME = 5
 
 
 # ---------- BINANCE DATA ----------
@@ -68,27 +68,28 @@ def generate_signal():
     if df is None or len(df) < 60:
         return {"signal": "NO DATA", "strength": 0, "type": "AVOID"}
 
-    close = df["close"]
+    close = df["close"][:-1]
 
     e9 = ema(close, 9)
-    e21 = ema(close, 21)
+e21 = ema(close, 21)
+e50 = ema(close, 50)
     r = rsi(close).iloc[-1]
     m, s = macd(close)
 
     score = 0
 
     # TREND
-    if e9.iloc[-1] > e21.iloc[-1]:
-        score += 2
-    else:
-        score -= 2
+if e9.iloc[-1] > e21.iloc[-1] > e50.iloc[-1]:
+    score += 3
+elif e9.iloc[-1] < e21.iloc[-1] < e50.iloc[-1]:
+    score -= 3
 
     # RSI
-    if 55 < r < 70:
-        score += 2
-    elif 30 < r < 45:
-        score -= 2
-
+if r > 55:
+    score += 2
+elif r < 45:
+    score -= 2
+    
     # MACD
     if m.iloc[-1] > s.iloc[-1]:
         score += 2
@@ -96,14 +97,16 @@ def generate_signal():
         score -= 2
 
     # MOMENTUM
-    if close.iloc[-1] > close.iloc[-3]:
-        score += 1
+if close.iloc[-1] > close.iloc[-3]:
+    score += 2
+else:
+    score -= 2
 
-    confidence = min(100, max(10, int((abs(score) / 6) * 100)))
+    confidence = min(95, max(20, int((abs(score) / 9) * 100)))
 
-    if score >= 4:
+    if score >= 3:
         return {"signal": "CALL 📈", "strength": confidence, "type": "HIGH"}
-    elif score <= -4:
+    elif score <= -3:
         return {"signal": "PUT 📉", "strength": confidence, "type": "HIGH"}
     else:
         return {"signal": "AVOID ⚠️", "strength": confidence, "type": "LOW"}
