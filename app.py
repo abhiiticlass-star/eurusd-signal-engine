@@ -22,29 +22,33 @@ def get_data():
 
         url = "https://api.binance.com/api/v3/klines"
 
-        r = requests.get(url, params={
-    "symbol": SYMBOL,
-    "interval": INTERVAL,
-    "limit": 200
-}, timeout=10).json()
+        r = requests.get(
+            url,
+            params={
+                "symbol": SYMBOL,
+                "interval": INTERVAL,
+                "limit": 200
+            },
+            timeout=10
+        ).json()
 
-if isinstance(r, dict):
-    return r
+        if isinstance(r, dict):
+            return r
 
-df = pd.DataFrame(r, columns=[
-    "time","open","high","low","close","volume",
-    "c1","c2","c3","c4","c5","c6"
-])
+        df = pd.DataFrame(r, columns=[
+            "time", "open", "high", "low", "close", "volume",
+            "c1", "c2", "c3", "c4", "c5", "c6"
+        ])
 
-df = df[["open","high","low","close"]].astype(float)
+        df = df[["open", "high", "low", "close"]].astype(float)
 
-cache["data"] = df
-cache["time"] = time.time()
+        cache["data"] = df
+        cache["time"] = time.time()
 
-return df
+        return df
 
-except:
-    return None
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @app.route("/debug")
