@@ -11,7 +11,7 @@ API_KEY = "DYASXHAJUXF7XLGN"
 INTERVAL = "1min"
 
 cache = {"time": 0, "data": None}
-CACHE_TIME = 60
+CACHE_TIME = 120  # 2 min cache (IMPORTANT FIX)
 
 
 # ---------- DATA FETCH ----------
@@ -33,6 +33,10 @@ def get_data():
 
         r = requests.get(url, params=params, timeout=10).json()
 
+        # ❌ HARD FIX FOR LIMIT ERROR
+        if "Note" in r:
+            return "API_LIMIT"
+
         if "Time Series FX (1min)" not in r:
             return "DATA_ERROR"
 
@@ -46,9 +50,7 @@ def get_data():
             "4. close": "close"
         })
 
-        for col in ["open", "high", "low", "close"]:
-            df[col] = pd.to_numeric(df[col])
-
+        df = df.astype(float)
         df = df.sort_index().reset_index(drop=True)
 
         cache["data"] = df
@@ -61,37 +63,27 @@ def get_data():
 
 
 # ---------- INDICATORS ----------
-def ema(series, period):
-    return series.ewm(span=period, adjust=False).mean()
+def ema(s, p): return s.ewm(span=p, adjust=False).mean()
 
-
-def rsi(series, period=14):
-    delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
-    rs = gain / loss.replace(0, np.nan)
+def rsi(s, p=14):
+    d = s.diff()
+    g = (d.where(d > 0, 0)).rolling(p).mean()
+    l = (-d.where(d < 0, 0)).rolling(p).mean()
+    rs = g / l.replace(0, np.nan)
     return 100 - (100 / (1 + rs))
 
-
-def macd(series):
-    ema12 = ema(series, 12)
-    ema26 = ema(series, 26)
-    macd_line = ema12 - ema26
-    signal = ema(macd_line, 9)
-    return macd_line, signal
-
+def macd(s):
+    m = ema(s, 12) - ema(s, 26)
+    sig = ema(m, 9)
+    return m, sig
 
 def atr(df):
-    high = df["high"]
-    low = df["low"]
-    close = df["close"]
-
+    h, l, c = df["high"], df["low"], df["close"]
     tr = pd.concat([
-        high - low,
-        abs(high - close.shift()),
-        abs(low - close.shift())
+        h-l,
+        abs(h-c.shift()),
+        abs(l-c.shift())
     ], axis=1).max(axis=1)
-
     return tr.rolling(14).mean()
 
 
@@ -99,62 +91,66 @@ def atr(df):
 def generate_signal():
     df = get_data()
 
+    if df == "API_LIMIT":
+        return {"signal": "API LIMIT ⚠️", "strength": "WAIT 1-2 MIN"}
+
     if df == "DATA_ERROR":
-        return {"signal": "API ERROR ❌", "strength": "LIMIT / NO DATA"}
+        return {"signal": "DATA ERROR ❌", "strength": "NO DATA"}
 
     if df == "BACKEND_CRASH":
-        return {"signal": "BACKEND CRASH ❌", "strength": "SERVER ISSUE"}
+        return {"signal": "BACKEND ERROR ❌", "strength": "SERVER"}
 
     try:
         close = df["close"]
 
-        ema9 = ema(close, 9)
-        ema21 = ema(close, 21)
-        ema50 = ema(close, 50)
+        e9 = ema(close, 9)
+        e21 = ema(close, 21)
+        e50 = ema(close, 50)
 
-        rsi_val = rsi(close).iloc[-1]
-        macd_line, macd_signal = macd(close)
-        atr_val = atr(df).iloc[-1]
+        r = rsi(close).iloc[-1]
+        m, s = macd(close)
+        a = atr(df).iloc[-1]
+
+        if pd.isna(a):
+            return {"signal": "AVOID ⚠️", "strength": "NO VOL DATA"}
 
         score = 0
 
         # TREND
-        if ema9.iloc[-1] > ema21.iloc[-1] > ema50.iloc[-1]:
-            score += 4
-        elif ema9.iloc[-1] < ema21.iloc[-1] < ema50.iloc[-1]:
-            score -= 4
+        if e9.iloc[-1] > e21.iloc[-1] > e50.iloc[-1]:
+            score += 3
+        elif e9.iloc[-1] < e21.iloc[-1] < e50.iloc[-1]:
+            score -= 3
 
         # RSI
-        if 50 < rsi_val < 65:
+        if 50 < r < 65:
             score += 2
-        elif 35 < rsi_val < 50:
+        elif 35 < r < 50:
             score -= 2
 
         # MACD
-        if macd_line.iloc[-1] > macd_signal.iloc[-1]:
-            score += 3
+        if m.iloc[-1] > s.iloc[-1]:
+            score += 2
         else:
-            score -= 3
+            score -= 2
 
         # MOMENTUM
         if close.iloc[-1] > close.iloc[-3]:
             score += 1
-        else:
-            score -= 1
 
-        # VOLATILITY
-        if atr_val < close.mean() * 0.0004:
-            return {"signal": "AVOID ⚠️", "strength": "LOW VOLATILITY"}
+        # VOL FILTER
+        if a < close.mean() * 0.0004:
+            return {"signal": "AVOID ⚠️", "strength": "LOW VOL"}
 
-        if score >= 6:
-            return {"signal": "CALL 📈", "strength": "HIGH"}
-        elif score <= -6:
-            return {"signal": "PUT 📉", "strength": "HIGH"}
+        if score >= 5:
+            return {"signal": "CALL 📈", "strength": "GOOD SETUP"}
+        elif score <= -5:
+            return {"signal": "PUT 📉", "strength": "GOOD SETUP"}
         else:
-            return {"signal": "AVOID ⚠️", "strength": "LOW"}
+            return {"signal": "AVOID ⚠️", "strength": "NO TRADE"}
 
     except:
-        return {"signal": "BACKEND CRASH ❌", "strength": "LOGIC ERROR"}
+        return {"signal": "ERROR ❌", "strength": "LOGIC"}
 
 
 # ---------- UI ----------
@@ -162,82 +158,30 @@ HTML = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>EUR/USD Signal Engine</title>
-
-    <style>
-        body {
-            font-family: Arial;
-            background: #0f172a;
-            color: white;
-            text-align: center;
-            padding-top: 60px;
-        }
-
-        .box {
-            background: #1e293b;
-            padding: 20px;
-            margin: auto;
-            width: 340px;
-            border-radius: 12px;
-        }
-
-        .title {
-            font-size: 22px;
-            font-weight: bold;
-        }
-
-        .signal {
-            margin-top: 20px;
-            padding: 20px;
-            background: #111827;
-            border-radius: 10px;
-            font-size: 20px;
-            min-height: 60px;
-        }
-
-        button {
-            margin-top: 20px;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 8px;
-            background: #22c55e;
-            color: white;
-            font-size: 16px;
-            cursor: pointer;
-        }
-    </style>
+<title>Pro Signal Engine</title>
+<style>
+body{background:#0f172a;color:white;text-align:center;font-family:Arial;padding-top:60px}
+.box{background:#1e293b;width:350px;margin:auto;padding:20px;border-radius:12px}
+.signal{margin-top:20px;background:#111827;padding:20px;border-radius:10px;font-size:20px}
+button{margin-top:20px;padding:10px 20px;background:#22c55e;border:none;border-radius:8px;color:white}
+</style>
 </head>
-
 <body>
 
 <div class="box">
-    <div class="title">EUR/USD Signal Engine</div>
-    <div>1 Minute Timeframe</div>
-
-    <div class="signal" id="box">Loading...</div>
-
-    <button onclick="load()">Get Signal</button>
+<h2>EUR/USD PRO ENGINE</h2>
+<div class="signal" id="box">Loading...</div>
+<button onclick="load()">Refresh</button>
 </div>
 
 <script>
-
 async function load(){
-    try{
-        let res = await fetch("/signal");
-        let data = await res.json();
-
-        document.getElementById("box").innerText =
-            data.signal + " | " + data.strength;
-
-    }catch(e){
-        document.getElementById("box").innerText = "BACKEND CRASH ❌";
-    }
+let r=await fetch('/signal')
+let d=await r.json()
+document.getElementById("box").innerText=d.signal+" | "+d.strength
 }
-
-// auto refresh every 1 min
-load();
-setInterval(load, 60000);
-
+load()
+setInterval(load,60000)
 </script>
 
 </body>
@@ -249,13 +193,10 @@ setInterval(load, 60000);
 def home():
     return render_template_string(HTML)
 
-
 @app.route("/signal")
 def signal():
     return jsonify(generate_signal())
 
-
-# ---------- RUN ----------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
