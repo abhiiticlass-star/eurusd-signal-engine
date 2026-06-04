@@ -42,6 +42,17 @@ def get_data():
 
     except:
         return None
+        @app.route("/debug")
+def debug():
+    df = get_data()
+
+    if df is None:
+        return jsonify({"error": "df is None"})
+
+    return jsonify({
+        "rows": len(df),
+        "columns": list(df.columns)
+    })
 
 
 # ---------- INDICATORS ----------
