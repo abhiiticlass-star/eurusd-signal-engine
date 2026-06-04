@@ -22,16 +22,20 @@ def get_data():
 
         url = "https://api.bybit.com/v5/market/kline"
 
-        r = requests.get(
+        response = requests.get(
             url,
             params={
                 "category": "linear",
-                "symbol": SYMBOL,
+                "symbol": "BTCUSDT",
                 "interval": "1",
                 "limit": 200
             },
             timeout=10
-        ).json()
+        )
+
+        print(response.text)
+
+        data = response.json()
 
         if r.get("retCode") != 0:
             return None
@@ -64,7 +68,17 @@ def get_data():
 
 @app.route("/debug")
 def debug():
-    return jsonify(get_data())
+    response = requests.get(
+        "https://api.bybit.com/v5/market/kline",
+        params={
+            "category": "linear",
+            "symbol": "BTCUSDT",
+            "interval": "1",
+            "limit": 5
+        }
+    )
+
+    return response.text
 
 
 # ---------- INDICATORS ----------
