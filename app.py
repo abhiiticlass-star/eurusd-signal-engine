@@ -59,20 +59,11 @@ def get_data():
         return df
 
     except Exception as e:
-        print("ERROR:", e)
-        return None
+    return {"error": str(e)}
 
 @app.route("/debug")
 def debug():
-    df = get_data()
-
-    if df is None:
-        return jsonify({"error": "No Data"})
-
-    return jsonify({
-        "rows": len(df),
-        "columns": list(df.columns)
-    })
+    return jsonify(get_data())
 
 
 # ---------- INDICATORS ----------
