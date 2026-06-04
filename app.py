@@ -103,34 +103,34 @@ def generate_signal():
     else:
         score -= 2
 
-    confidence = min(95, max(20, int((abs(score) / 9) * 100)))
+        confidence = min(95, max(20, int((abs(score) / 9) * 100)))
 
-if score >= 3:
-     return {
-        "signal": "CALL 📈",
-        "strength": confidence,
-        "type": "HIGH",
-        "score": score,
-        "rsi": round(r, 2)
-    }
+    if score >= 3:
+        return {
+            "signal": "CALL 📈",
+            "strength": confidence,
+            "type": "HIGH",
+            "score": score,
+            "rsi": round(r, 2)
+        }
 
-elif score <= -3:
-    return {
-        "signal": "PUT 📉",
-        "strength": confidence,
-        "type": "HIGH",
-        "score": score,
-        "rsi": round(r, 2)
-    }
+    elif score <= -3:
+        return {
+            "signal": "PUT 📉",
+            "strength": confidence,
+            "type": "HIGH",
+            "score": score,
+            "rsi": round(r, 2)
+        }
 
-else:
-    return {
-        "signal": "AVOID ⚠️",
-        "strength": confidence,
-        "type": "LOW",
-        "score": score,
-        "rsi": round(r, 2)
-    }
+    else:
+        return {
+            "signal": "AVOID ⚠️",
+            "strength": confidence,
+            "type": "LOW",
+            "score": score,
+            "rsi": round(r, 2)
+        }
 
 # ---------- UI ----------
 HTML = """
