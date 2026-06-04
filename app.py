@@ -59,7 +59,8 @@ def get_data():
         return df
 
     except Exception as e:
-    return {"error": str(e)}
+        return {"error": str(e)}
+
 
 @app.route("/debug")
 def debug():
