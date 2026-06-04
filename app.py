@@ -20,41 +20,34 @@ def get_data():
         if cache["data"] is not None and time.time() - cache["time"] < CACHE_TIME:
             return cache["data"]
 
-        url = "https://api.bybit.com/v5/market/kline"
+        url = "https://api.exchange.coinbase.com/products/BTC-USD/candles"
 
         response = requests.get(
             url,
-            params={
-                "category": "linear",
-                "symbol": "BTCUSDT",
-                "interval": "1",
-                "limit": 200
-            },
+            params={"granularity": 60},
             timeout=10
         )
 
-        print(response.text)
-
         data = response.json()
 
-        if r.get("retCode") != 0:
+        if not isinstance(data, list) or len(data) == 0:
             return None
 
-        data = r["result"]["list"]
-
-        df = pd.DataFrame(data, columns=[
-            "time",
-            "open",
-            "high",
-            "low",
-            "close",
-            "volume",
-            "turnover"
-        ])
+        df = pd.DataFrame(
+            data,
+            columns=[
+                "time",
+                "low",
+                "high",
+                "open",
+                "close",
+                "volume"
+            ]
+        )
 
         df = df[["open", "high", "low", "close"]].astype(float)
 
-        # Bybit newest candle pehle deta hai
+        # Coinbase newest candle first deta hai
         df = df.iloc[::-1].reset_index(drop=True)
 
         cache["data"] = df
@@ -63,22 +56,22 @@ def get_data():
         return df
 
     except Exception as e:
-        return {"error": str(e)}
+        print("DATA ERROR:", e)
+        return None
 
 
 @app.route("/debug")
 def debug():
-    response = requests.get(
-        "https://api.bybit.com/v5/market/kline",
-        params={
-            "category": "linear",
-            "symbol": "BTCUSDT",
-            "interval": "1",
-            "limit": 5
-        }
-    )
+    df = get_data()
 
-    return response.text
+    if df is None:
+        return jsonify({"error": "No Data"})
+
+    return jsonify({
+        "rows": len(df),
+        "columns": list(df.columns),
+        "last_close": float(df["close"].iloc[-1])
+    })
 
 
 # ---------- INDICATORS ----------
