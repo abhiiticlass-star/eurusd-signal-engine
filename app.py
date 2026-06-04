@@ -66,13 +66,12 @@ def generate_signal():
     df = get_data()
 
     if df is None or len(df) < 60:
-        return {"signal": "NO DATA ❌", "strength": "LOW"}
+        return {"signal": "NO DATA", "strength": 0, "type": "AVOID"}
 
     close = df["close"]
 
     e9 = ema(close, 9)
     e21 = ema(close, 21)
-
     r = rsi(close).iloc[-1]
     m, s = macd(close)
 
@@ -100,13 +99,16 @@ def generate_signal():
     if close.iloc[-1] > close.iloc[-3]:
         score += 1
 
-    # FINAL DECISION
+    # ---------- CONFIDENCE CALC ----------
+    confidence = min(100, max(10, int((abs(score) / 6) * 100)))
+
+    # ---------- FINAL ----------
     if score >= 4:
-        return {"signal": "CALL 📈", "strength": "HIGH"}
+        return {"signal": "CALL 📈", "strength": confidence, "type": "HIGH"}
     elif score <= -4:
-        return {"signal": "PUT 📉", "strength": "HIGH"}
+        return {"signal": "PUT 📉", "strength": confidence, "type": "HIGH"}
     else:
-        return {"signal": "AVOID ⚠️", "strength": "LOW"}
+        return {"signal": "AVOID ⚠️", "strength": confidence, "type": "LOW"}
 
 
 # ---------- UI ----------
@@ -114,7 +116,8 @@ HTML = """
 <!DOCTYPE html>
 <html>
 <head>
-<title>BTCUSDT Signal Engine</title>
+<title>BTCUSDT PRO ENGINE</title>
+
 <style>
 body{
     background:#0f172a;
@@ -123,13 +126,15 @@ body{
     font-family:Arial;
     padding-top:60px;
 }
+
 .box{
     background:#1e293b;
-    width:340px;
+    width:360px;
     margin:auto;
     padding:20px;
     border-radius:12px;
 }
+
 .signal{
     margin-top:20px;
     background:#111827;
@@ -137,8 +142,15 @@ body{
     border-radius:10px;
     font-size:20px;
 }
+
+.timer{
+    margin-top:10px;
+    font-size:14px;
+    color:#22c55e;
+}
+
 button{
-    margin-top:20px;
+    margin-top:15px;
     padding:10px 20px;
     background:#22c55e;
     border:none;
@@ -147,10 +159,13 @@ button{
 }
 </style>
 </head>
+
 <body>
 
 <div class="box">
-<h2>BTCUSDT LIVE SIGNAL</h2>
+<h2>BTCUSDT LIVE ENGINE</h2>
+
+<div class="timer" id="timer">Syncing...</div>
 
 <div class="signal" id="box">Loading...</div>
 
@@ -158,15 +173,34 @@ button{
 </div>
 
 <script>
+
+let seconds = 60;
+
+function countdown(){
+    seconds--;
+    if(seconds <= 0){
+        load();
+        seconds = 60;
+    }
+    document.getElementById("timer").innerText =
+        "Next update in: " + seconds + " sec";
+}
+
 async function load(){
     let r = await fetch('/signal');
     let d = await r.json();
-    document.getElementById("box").innerText =
-        d.signal + " | " + d.strength;
+
+    let label = d.type === "HIGH"
+        ? d.signal + " | " + d.strength + "% CONFIDENCE"
+        : "AVOID ⚠️ | " + d.strength + "% CONFIDENCE";
+
+    document.getElementById("box").innerText = label;
+    seconds = 60;
 }
 
 load();
-setInterval(load, 30000);
+setInterval(countdown, 1000);
+
 </script>
 
 </body>
