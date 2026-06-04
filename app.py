@@ -110,8 +110,13 @@ def generate_signal():
     elif score <= -3:
         return {"signal": "PUT 📉", "strength": confidence, "type": "HIGH"}
     else:
-        return {"signal": "AVOID ⚠️", "strength": confidence, "type": "LOW"}
-
+    return {
+        "signal": "AVOID ⚠️",
+        "strength": confidence,
+        "type": "LOW",
+        "score": score,
+        "rsi": round(r, 2)
+    }
 
 # ---------- UI ----------
 HTML = """
