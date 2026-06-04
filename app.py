@@ -80,17 +80,17 @@ def generate_signal():
     score = 0
 
     # TREND
-if e9.iloc[-1] > e21.iloc[-1] > e50.iloc[-1]:
-    score += 3
-elif e9.iloc[-1] < e21.iloc[-1] < e50.iloc[-1]:
-    score -= 3
+    if e9.iloc[-1] > e21.iloc[-1] > e50.iloc[-1]:
+        score += 3
+    elif e9.iloc[-1] < e21.iloc[-1] < e50.iloc[-1]:
+        score -= 3
 
     # RSI
-if r > 55:
-    score += 2
-elif r < 45:
-    score -= 2
-    
+    if r > 55:
+        score += 2
+    elif r < 45:
+        score -= 2
+
     # MACD
     if m.iloc[-1] > s.iloc[-1]:
         score += 2
@@ -98,10 +98,10 @@ elif r < 45:
         score -= 2
 
     # MOMENTUM
-if close.iloc[-1] > close.iloc[-3]:
-    score += 2
-else:
-    score -= 2
+    if close.iloc[-1] > close.iloc[-3]:
+        score += 2
+    else:
+        score -= 2
 
     confidence = min(95, max(20, int((abs(score) / 9) * 100)))
 
