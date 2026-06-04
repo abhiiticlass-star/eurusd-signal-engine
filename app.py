@@ -42,7 +42,9 @@ def get_data():
 
     except:
         return None
-        @app.route("/debug")
+        
+        
+@app.route("/debug")
 def debug():
     df = get_data()
 
