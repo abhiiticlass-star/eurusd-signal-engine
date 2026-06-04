@@ -171,7 +171,6 @@ button{
 
 <div class="signal" id="box">Loading...</div>
 
-<button onclick="load()">Refresh</button>
 </div>
 
 <script>
